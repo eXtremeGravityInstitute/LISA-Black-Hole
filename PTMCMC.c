@@ -140,7 +140,7 @@ int main(int argc,char **argv)
              fscanf(in,"%lf%lf%lf%lf%lf\n", &f, &AC[i], &EC[i], &TC[i], &SN[i]);
          }
          fclose(in);
-         Tend = 2.492000e+07;
+         Tend = 24953333.333;
       }
      else
      {
@@ -852,7 +852,7 @@ void ResponseFast(int ll, double Tend, double *params, long N, double *AS, doubl
     FF = (double*)malloc(sizeof(double)* (NFmax));
     TF = (double*)malloc(sizeof(double)* (NFmax));
     
-    SetUp(ll, params, NFmax, &NF, FF, TF, PF, AF);
+    SetUp(ll, Tobs, params, NFmax, &NF, FF, TF, PF, AF);
     
     AAmp = (double*)malloc(sizeof(double)* (NF));
     EAmp = (double*)malloc(sizeof(double)* (NF));
@@ -960,40 +960,62 @@ void ResponseFast(int ll, double Tend, double *params, long N, double *AS, doubl
     
 }
 
-double FofT(int ll, double *params, double tref)
+double FofT(int ll, double Tend, double *params, double tref)
 {
     
-    double m1, m2, m1_SI, m2_SI, chi1, chi2, tc;
+    double m1, m2, m1_SI, m2_SI, chi1, chi2, tc, dm;
     double Mtot, eta, Mc, af, fr;
     double Amp, Phase, distance;
     double fref;
     double fnew, tf;
     int i;
     
-    if(ll == 0)
+    if(ll == 0)  // linear in m1, m2
     {
-    m1 = params[0];
-    m2 = params[1];
+    m1 = params[0];    // Mass1
+    m2 = params[1];    // Mass2
     distance = params[6]*1.0e9*PC_SI; // distance
-    }
-    else
-    {
-    m1 = exp(params[0]);
-    m2 = exp(params[1]);
-    distance = exp(params[6])*1.0e9*PC_SI; // distance
-    }
-    
     m1_SI = m1*MSUN_SI;
     m2_SI = m2*MSUN_SI;
+    Mtot = (m1+m2)*TSUN;
+    eta = m1*m2/((m1+m2)*(m1+m2));
+    Mc = pow(m1*m2,3.0/5.0)/pow(m1+m2,1.0/5.0)*TSUN;
+    }
+    else if(ll == 1)  // log in m1, m2
+    {
+     m1 = exp(params[0]);    // Mass1
+     m2 = exp(params[1]);    // Mass2
+     distance = exp(params[6])*1.0e9*PC_SI; // distance
+     m1_SI = m1*MSUN_SI;
+     m2_SI = m2*MSUN_SI;
+     Mtot = (m1+m2)*TSUN;
+     eta = m1*m2/((m1+m2)*(m1+m2));
+     Mc = pow(m1*m2,3.0/5.0)/pow(m1+m2,1.0/5.0)*TSUN;
+    }
+    else // log in Mc, Mt
+    {
+    distance = exp(params[6])*1.0e9*PC_SI; // distance
+    Mc = exp(params[0])*TSUN;
+    Mtot = exp(params[1])*TSUN;
+    eta = pow((Mc/Mtot), (5.0/3.0));
+     if(eta > 0.25)
+     {
+        dm = 0.0;
+     }
+     else
+     {
+        dm = sqrt(1.0-4.0*eta);
+     }
+    m1 = Mtot*(1.0+dm)/2.0;
+    m2 = Mtot*(1.0-dm)/2.0;
+    m1_SI = m1*MSUN_SI/TSUN;
+    m2_SI = m2*MSUN_SI/TSUN;
+    }
+    
     chi1 = params[2];
     chi2 = params[3];
     tc = params[5];
-    
-    Mtot = (m1+m2)*TSUN;
-    eta = m1*m2/((m1+m2)*(m1+m2));
-    
-    Mc = pow(m1*m2,3.0/5.0)/pow(m1+m2,1.0/5.0)*TSUN;
-    
+
     af = FinalSpin0815(eta, chi1, chi2);
     fr = fring(eta, chi1, chi2, af)/Mtot;
 
@@ -1015,14 +1037,14 @@ double FofT(int ll, double *params, double tref)
     i = 0;
     do
     {
-        getfreq(&fnew, &tf, &Amp, &Phase, tref, fref, 0.0, PDfref, m1_SI, m2_SI, chi1, chi2, distance, tc);
+        getfreq(Tend, &fnew, &tf, &Amp, &Phase, tref, fref, 0.0, PDfref, m1_SI, m2_SI, chi1, chi2, distance, tc);
         fref = fnew;
         i++;
     }while(i < 10 && fabs(tf-tref) > 1.0 && fref == fref);
     
     // nan catcher
-    if(fref != fref) fref = 1.0/Tobs;
-    if(fref < 0.0) fref = 1.0/Tobs;
+    if(fref != fref) fref = 1.0/Tend;
+    if(fref < 0.0) fref = 1.0/Tend;
         
     }
     
@@ -1034,36 +1056,60 @@ double FofT(int ll, double *params, double tref)
 void StartStop(int ll, double *params, double Tseg, double tstart, double tstop, double *fstart, double *fstop, double *frg)
 {
     
-    double m1, m2, m1_SI, m2_SI, chi1, chi2, tc;
+    double m1, m2, m1_SI, m2_SI, chi1, chi2, tc, dm;
     double Mtot, eta, Mc, af, fr;
     double Amp, Phase, distance;
     double fmin, fmax;
-    double fnew, tf;
+    double fnew, tf, fny;
     int i;
     
-    if(ll == 0)
+    fny = 1.0/(2.0*dt);
+
+    if(ll == 0)  // linear in m1, m2
     {
-    m1 = params[0];
-    m2 = params[1];
+    m1 = params[0];    // Mass1
+    m2 = params[1];    // Mass2
     distance = params[6]*1.0e9*PC_SI; // distance
-    }
-    else
-    {
-    m1 = exp(params[0]);
-    m2 = exp(params[1]);
-    distance = exp(params[6])*1.0e9*PC_SI; // distance
-    }
-    
     m1_SI = m1*MSUN_SI;
     m2_SI = m2*MSUN_SI;
+    Mtot = (m1+m2)*TSUN;
+    eta = m1*m2/((m1+m2)*(m1+m2));
+    Mc = pow(m1*m2,3.0/5.0)/pow(m1+m2,1.0/5.0)*TSUN;
+    }
+    else if(ll == 1)  // log in m1, m2
+    {
+     m1 = exp(params[0]);    // Mass1
+     m2 = exp(params[1]);    // Mass2
+     distance = exp(params[6])*1.0e9*PC_SI; // distance
+     m1_SI = m1*MSUN_SI;
+     m2_SI = m2*MSUN_SI;
+     Mtot = (m1+m2)*TSUN;
+     eta = m1*m2/((m1+m2)*(m1+m2));
+     Mc = pow(m1*m2,3.0/5.0)/pow(m1+m2,1.0/5.0)*TSUN;
+    }
+    else // log in Mc, Mt
+    {
+    distance = exp(params[6])*1.0e9*PC_SI; // distance
+    Mc = exp(params[0])*TSUN;
+    Mtot = exp(params[1])*TSUN;
+    eta = pow((Mc/Mtot), (5.0/3.0));
+     if(eta > 0.25)
+     {
+        dm = 0.0;
+     }
+     else
+     {
+        dm = sqrt(1.0-4.0*eta);
+     }
+    m1 = Mtot*(1.0+dm)/2.0;
+    m2 = Mtot*(1.0-dm)/2.0;
+    m1_SI = m1*MSUN_SI/TSUN;
+    m2_SI = m2*MSUN_SI/TSUN;
+    }
+    
     chi1 = params[2];
     chi2 = params[3];
     tc = params[5];
-    
-    Mtot = (m1+m2)*TSUN;
-    eta = m1*m2/((m1+m2)*(m1+m2));
-    
-    Mc = pow(m1*m2,3.0/5.0)/pow(m1+m2,1.0/5.0)*TSUN;
     
     af = FinalSpin0815(eta, chi1, chi2);
     fr = fring(eta, chi1, chi2, af)/Mtot;
@@ -1077,21 +1123,24 @@ void StartStop(int ll, double *params, double Tseg, double tstart, double tstop,
     
     // guess at fmin (whre the signal starts at t=0
     fmin = 0.9*pow( (pow(Mc,5.0/3.0)*(tc-tstart)/5.0) ,-3.0/8.0)/(8.0*PI);
-    if(fmin < 1.0/Tobs) fmin = 1.0/Tobs;
+    if(fmin < 1.0/Tseg) fmin = 1.0/Tseg;
     
     // find the frequency at t= tstart.
     i = 0;
     do
     {
-        getfreq(&fnew, &tf, &Amp, &Phase, tstart, fmin, 0.0, PDfref, m1_SI, m2_SI, chi1, chi2, distance, tc);
-        if(fnew < 1.0/Tobs) fnew = 1.0/Tobs;
+        getfreq(Tseg, &fnew, &tf, &Amp, &Phase, tstart, fmin, 0.0, PDfref, m1_SI, m2_SI, chi1, chi2, distance, tc);
+        if(fnew < 1.0/Tseg) fnew = 1.0/Tseg;
         fmin = fnew;
+        //printf("%e %e %e\n", fnew, tf, tstart);
         i++;
     }while(i < 10 && fabs(tf-tstart) > 1.0 && fmin == fmin);
     
     // nan catcher
-    if(fmin != fmin) fmin = 1.0/Tobs;
-    if(fmin < 0.0) fmin = 1.0/Tobs;
+    if(fmin != fmin) fmin = 1.0/Tseg;
+    if(fmin < 0.0) fmin = 1.0/Tseg;
+    
+   // printf("%e\n", fr);
     
     fmax = 2.0*fr;
 
@@ -1099,20 +1148,28 @@ void StartStop(int ll, double *params, double Tseg, double tstart, double tstop,
     if(tc > tstop)
     {
         fmax = 0.9*pow( (pow(Mc,5.0/3.0)*(tc-tstop)/5.0) ,-3.0/8.0)/(8.0*PI);
-        if(fmax < fmin) fmax = fmin+1.0/Tobs;
+        if(fmax < fmin) fmax = fmin+1.0/Tseg;
         // find the frequency at t= tstop.
         do
         {
-            getfreq(&fnew, &tf, &Amp, &Phase, tstop, fmax, 0.0, PDfref, m1_SI, m2_SI, chi1, chi2, distance, tc);
-            if(fnew < fmin) fnew = fmin+1.0/Tobs;
+            getfreq(Tseg, &fnew, &tf, &Amp, &Phase, tstop, fmax, 0.0, PDfref, m1_SI, m2_SI, chi1, chi2, distance, tc);
+            if(fnew < fmin) fnew = fmin+1.0/Tseg;
             fmax = fnew;
+            //printf("%e %e %e\n", fnew, tf, tstop);
             i++;
         }while(i < 10 && fabs(tf-tstop) > 1.0);
     }
     
     // nan catcher
     if(fmax != fmax) fmax = 2.0*fr;
+    if(fmax > fny) fmax = fny;
     if(fmax < fmin) fmax = 2.0*fmin;
+    
+    
+    // printf("%e %e %e\n", fmax, fr, fny);
+    
+
+    
     
     *fstart = fmin;
     *fstop = fmax;
@@ -1141,7 +1198,7 @@ void ResponseFreq(int ll, double Tend, double *params, long N, double *AS, doubl
     
     double HC, HS, hp, hc;
     
-    double m1, m2, chi1, chi2, phic, tc, distance, Mtot, eta, fr, af;
+    double m1, m2, chi1, chi2, phic, tc, distance, Mtot, eta, dm, fr, af;
     
     double *ta, *xia, *FF;
     
@@ -1158,6 +1215,8 @@ void ResponseFreq(int ll, double Tend, double *params, long N, double *AS, doubl
     clock_t start, end;
     double cpu_time_used;
     
+    double m1_SI, m2_SI, deltaF;
+    
     double *FpAR, *FpAI, *FcAR, *FcAI;
     double *FpER, *FpEI, *FcER, *FcEI;
     
@@ -1167,22 +1226,56 @@ void ResponseFreq(int ll, double Tend, double *params, long N, double *AS, doubl
     
     // Have to generate full signal to get the merger phase correct
     // There are probably ways to work around this
-    StartStop(ll, params, Tobs, 0.0, Tobs, &fstart, &fstop, &fr);
- 
-
-    if(ll == 0)  // linear
+    StartStop(ll, params, Tend, 0.0, Tend, &fstart, &fstop, &fr);
+    
+    // Because of the way the LDC phase is set at merger, we have to take the signal all the way out to
+    // the merger frequency even if the obsevation time doesn't get us to merger. The signal is still
+    // truncated by the window at Tend, so the SNRs etc will be correct
+    
+    fstop = 2.0*fr;
+    
+    if(ll == 0)  // linear in m1, m2
     {
-        m1 = params[0];    // Mass1
-        m2 = params[1];    // Mass2
-        distance = params[6]*1.0e9*PC_SI; // distance
+    m1 = params[0];    // Mass1
+    m2 = params[1];    // Mass2
+    distance = params[6]*1.0e9*PC_SI; // distance
+    m1_SI = m1*MSUN_SI;
+    m2_SI = m2*MSUN_SI;
+    Mtot = (m1+m2)*TSUN;
+    eta = m1*m2/((m1+m2)*(m1+m2));
+    Mc = pow(m1*m2,3.0/5.0)/pow(m1+m2,1.0/5.0)*TSUN;
     }
-    else  // log
+    else if(ll == 1)  // log in m1, m2
     {
-        m1 = exp(params[0]);    // Mass1
-        m2 = exp(params[1]);    // Mass2
-        distance = exp(params[6])*1.0e9*PC_SI; // distance
+     m1 = exp(params[0]);    // Mass1
+     m2 = exp(params[1]);    // Mass2
+     distance = exp(params[6])*1.0e9*PC_SI; // distance
+     m1_SI = m1*MSUN_SI;
+     m2_SI = m2*MSUN_SI;
+     Mtot = (m1+m2)*TSUN;
+     eta = m1*m2/((m1+m2)*(m1+m2));
+     Mc = pow(m1*m2,3.0/5.0)/pow(m1+m2,1.0/5.0)*TSUN;
     }
-
+    else // log in Mc, Mt
+    {
+    distance = exp(params[6])*1.0e9*PC_SI; // distance
+    Mc = exp(params[0])*TSUN;
+    Mtot = exp(params[1])*TSUN;
+    eta = pow((Mc/Mtot), (5.0/3.0));
+     if(eta > 0.25)
+     {
+        dm = 0.0;
+     }
+     else
+     {
+        dm = sqrt(1.0-4.0*eta);
+     }
+    m1 = Mtot*(1.0+dm)/2.0;
+    m2 = Mtot*(1.0-dm)/2.0;
+    m1_SI = m1*MSUN_SI/TSUN;
+    m2_SI = m2*MSUN_SI/TSUN;
+    }
+    
 
     chi1 = params[2];  // Spin1
     chi2 = params[3];  // Spin2
@@ -1190,20 +1283,13 @@ void ResponseFreq(int ll, double Tend, double *params, long N, double *AS, doubl
     tc = params[5];    // merger time
     cosi = params[10];  // inclination
     
-    Mtot = (m1+m2)*TSUN;
-    eta = m1*m2/((m1+m2)*(m1+m2));
-    
     Aplus = 0.5*(1.+cosi*cosi);
     Across = -cosi;
     
     AmpPhaseFDWaveform *ap = NULL;
-    double m1_SI, m2_SI, deltaF;
     double fRef_in=PDfref;
     double *AF, *TF;
     int ret, flag1, flag2;
-    
-    m1_SI =  m1*MSUN_SI;
-    m2_SI =  m2*MSUN_SI;
     
     AF = (double*)malloc(sizeof(double)* (N/2));
     TF = (double*)malloc(sizeof(double)* (N/2));
@@ -1282,8 +1368,6 @@ void ResponseFreq(int ll, double Tend, double *params, long N, double *AS, doubl
         AS[n] = 0.0;
         ES[n] = 0.0;
     }
-        
-    Tcut = Tend+t_rise/1.5;
     
     
     /*   Main Loop   */
@@ -1308,11 +1392,11 @@ void ResponseFreq(int ll, double Tend, double *params, long N, double *AS, doubl
             if(t < t_tuke) x = 0.5*(1.0+cos(PI*(t/t_tuke-1.0)));
             
             // taper
-            if(t > Tcut-t_rise && t < Tcut)
+            if(t > Tend-t_rise && t < Tend)
             {
-            x = 0.5*(1.0-cos(PI*(t-Tcut)/t_rise));
+            x = 0.5*(1.0-cos(PI*(t-Tend)/t_rise));
             }
-            if(t > Tcut) x = 0.0;
+            if(t > Tend) x = 0.0;
             
             kdotx = t-xi;
             
@@ -1502,28 +1586,6 @@ double nh(int ll, double Tend, double *params, double *ATR, double *ATI, double 
     gsl_spline_free(Espline);
     gsl_interp_accel_free(Eacc);
         
-    // The tapering has very little impact. Spectral leakage not a problem
-        
-     /*
-      fr = 1.0e-4;
-      out = fopen("cossin.dat","w");
-     for(i=0; i< MF; i++)
-       {
-          f = FN[i];
-           if(f >= FF[0] && f <= FF[0]+fr)
-           {
-               x = 0.5*(1.0-cos(PI*(f-FF[0])/fr));
-               As[i] *= x;
-               Es[i] *= x;
-               Ac[i] *= x;
-               Ec[i] *= x;
-           }
-           
-           fprintf(out,"%e %e %e %e %e\n", f, Ac[i], Ec[i], As[i], Es[i]);
-           
-       }
-    fclose(out);
-      */
     
     gsl_fft_real_radix2_transform(As, 1, MF);
     gsl_fft_real_radix2_transform(Es, 1, MF);
@@ -1952,7 +2014,7 @@ double SNRFast(double *params)
     FF = (double*)malloc(sizeof(double)* (NFmax));
     TF = (double*)malloc(sizeof(double)* (NFmax));
                          
-    SetUp(0, params, NFmax, &NF, FF, TF, PF, AF);
+    SetUp(0, Tobs, params, NFmax, &NF, FF, TF, PF, AF);
                          
     AAmp = (double*)malloc(sizeof(double)* (NF));
     EAmp = (double*)malloc(sizeof(double)* (NF));
@@ -2373,7 +2435,7 @@ double LikelihoodDeltaMaxT(int ll, double Tend, double *params, int NF, double *
     params[4] -= dphase/2.0;
     params[5] += dtx;
       
-      if(ll = 1)
+      if(ll == 1 || ll == 2)
       {
        params[6] -= log(y);
       }
@@ -2536,7 +2598,7 @@ double LikelihoodDeltaMax(int ll, double Tend, double *params, int NF, double *F
         
     params[4] -= dphase/2.0;
       
-      if(ll = 1)
+      if(ll == 1 || ll == 2)
       {
        params[6] -= log(y);
       }
@@ -2864,7 +2926,7 @@ void Ext_In(int ll, double *params, double **Fisher, double **eChl, double **iCh
 
 void FisherPlot(int ll, double Tend, double *params)
 {
-    int i, j, k;
+    int i, j, k, cnt;
     
     double **Fisher;
     double **Cov, **Chl;
@@ -2935,7 +2997,7 @@ void FisherPlot(int ll, double Tend, double *params)
       out = fopen("fisher.dat","w");
  
       i = 0;
-      k = 0;
+      cnt = 0;
        do
        {
  
@@ -2962,15 +3024,15 @@ void FisherPlot(int ll, double Tend, double *params)
          while(params[8] < 0.0) params[8] += TPI;
          while(params[8] > TPI) params[8] -= TPI;
      
-            fprintf(out, "%d %e ", k, 0.0);
+            fprintf(out, "%d %e ", cnt, 0.0);
             for(j = 0; j < NP; j++) fprintf(out, "%.15e ", params[j]);
             fprintf(out,"\n");
          
-         k++;
+         cnt++;
   
      }
  
-       }while(i < 10000000 && k < 10000);
+       }while(i < 10000000 && cnt < 10000);
     
     fclose(out);
     
@@ -3002,7 +3064,7 @@ void MCMC(double *params, double Tend, long N, double *AD, double *ED, double *S
     double *FN, *ASN;
     int NH=1000;
     int MP;
-    int M = 1000000;
+    int M = 500000;
     int *who;
     double *heat;
     double **paramx, **paramy;
@@ -3020,6 +3082,7 @@ void MCMC(double *params, double Tend, long N, double *AD, double *ED, double *S
     int *scount, *sacc, hold;
     int mcount, macc;
     int **av, **cv;
+    double Mc, Mtot, eta, dm;
     
     double *ATR, *ATI, *ETR, *ETI;
     double *AS, *ES;
@@ -3060,10 +3123,24 @@ void MCMC(double *params, double Tend, long N, double *AD, double *ED, double *S
 
     // switch to log for masses and distance
     
+    // switch to log for masses and distance
+    
+    /*
     ll = 1;
     params[0] = log(params[0]);
     params[1] = log(params[1]);
     params[6] = log(params[6]);
+    */
+    
+    // switch to log for Mc, Mtoat and distance
+    
+       ll = 2;
+       Mtot = params[0]+params[1];
+       Mc = pow(params[0]*params[1], 3.0/5.0)/pow(Mtot,1.0/5.0);
+       //printf("%e %e\n", Mc, Mtot);
+       params[0] = log(Mc);
+       params[1] = log(Mtot);
+       params[6] = log(params[6]);
     
     while(params[4] > PI)   params[4] -= PI;
     while(params[4] < 0.0)  params[4] += PI;
@@ -3072,6 +3149,8 @@ void MCMC(double *params, double Tend, long N, double *AD, double *ED, double *S
     while(params[9] > PI)   params[9] -= PI;
     while(params[9] < 0.0)  params[9] += PI;
     
+    if(ll == 0 || ll == 1)
+    {
     if(params[1] > params[0])  // catch if m2 > m1 and flip
     {
         lm1 = params[1];
@@ -3083,14 +3162,14 @@ void MCMC(double *params, double Tend, long N, double *AD, double *ED, double *S
         params[2] = chi1;
         params[3] = chi2;
     }
-
+    }
     
     AF = (double*)malloc(sizeof(double)* (NFmax));
     PF = (double*)malloc(sizeof(double)* (NFmax));
     FS = (double*)malloc(sizeof(double)* (NFmax));
     TF = (double*)malloc(sizeof(double)* (NFmax));
     
-    SetUp(ll, params, NFmax, &NF, FS, TF, PF, AF);
+    SetUp(ll, Tend, params, NFmax, &NF, FS, TF, PF, AF);
     
     AAmp = (double*)malloc(sizeof(double)* (NF));
     EAmp = (double*)malloc(sizeof(double)* (NF));
@@ -3155,7 +3234,7 @@ void MCMC(double *params, double Tend, long N, double *AD, double *ED, double *S
     FF[NF] = FF[NF-1];
     if(Tend < tc)
     {
-     FF[NF] = FofT(ll, params, Tend);
+     FF[NF] = FofT(ll, Tobs, params, Tend);
     }
     
     
@@ -3249,13 +3328,17 @@ void MCMC(double *params, double Tend, long N, double *AD, double *ED, double *S
     }
     
     
-    for (i=0; i< NC; i++) who[i] = i;
-    heat[0] = 1.0;
-    // Hot chain should have an effective SNR of ~5
-    SNR = sqrt(logLx[0]*2.0);
-    x = pow((SNR/5.0),1.0/(double)(NC-1));
-    for (i=1; i< NC; i++) heat[i] = heat[i-1]*x;
-    printf("SNR %f increment %f max heat %f SNReff = %f\n", SNR, x, heat[NC-1], SNR/heat[NC-1]);
+      for (i=0; i< NC; i++) who[i] = i;
+     
+     // run 4 cold chains
+     for (i=0; i< 4; i++) heat[i] = 1.0;
+     
+     // Hot chain should have an effective SNR of ~5
+     SNR = sqrt(logLx[0]*2.0);
+     x = pow((SNR/5.0),1.0/(double)(NC-4));
+     if(x > 1.4) x = 1.4;
+     for (i=4; i< NC; i++) heat[i] = heat[i-1]*x;
+     printf("SNR %f increment %f max heat %f SNReff = %f\n", SNR, x, heat[NC-1], SNR/heat[NC-1]);
     
     //return;
    
@@ -3263,15 +3346,46 @@ void MCMC(double *params, double Tend, long N, double *AD, double *ED, double *S
     max = (double*)malloc(sizeof(double)* (NP));
     min = (double*)malloc(sizeof(double)* (NP));
     
-    // [0] ln Mass1  [1] ln Mass2  [2] Spin1 [3] Spin2 [4] phic [5] tc [6] ln distance
+    // prior boundaries
+    max = (double*)malloc(sizeof(double)* (NP));
+    min = (double*)malloc(sizeof(double)* (NP));
+    
+    // ll = 0  [0] Mass1  [1] Mass2
+    // ll = 1  [0] ln Mass1  [1] ln Mass2
+    // ll = 2  [0] ln Mc  [1] ln Mtot
+    // [2] Spin1 [3] Spin2 [4] phic [5] tc [6] ln distance
     // [7] cos EclipticCoLatitude, [8] EclipticLongitude  [9] polarization, [10] cos inclination
     
+    if(ll == 0)
+    {
+    max[0] = 1.0e8;
+    max[1] = 1.0e8;
+    min[0] = 1.0e3;
+    min[1] = 1.0e3;
+    }
+    
+    if(ll == 1)
+    {
     max[0] = log(1.0e8);
     max[1] = log(1.0e8);
+    min[0] = log(1.0e3);
+    min[1] = log(1.0e3);
+    }
+    
+    
+    if(ll == 2)
+    {
+    max[0] = log(0.44*1.0e8);
+    max[1] = log(1.0e8);
+    min[0] = log(1.0e2);
+    min[1] = log(1.0e3);
+    }
+    
+    
     max[2] = 0.999;
     max[3] = 0.999;
     max[4] = PI;
-    max[5] = 2.0*Tobs;
+    max[5] = 2.0*Tend;
     max[6] = log(400.0);
     max[7] = 1.0;
     max[8] = 2.0*PI;
@@ -3279,8 +3393,6 @@ void MCMC(double *params, double Tend, long N, double *AD, double *ED, double *S
     max[10] = 1.0;
     
     
-    min[0] = log(5.0e4);
-    min[1] = log(5.0e4);
     min[2] = -0.999;
     min[3] = -0.999;
     min[4] = 0.0;
@@ -3291,7 +3403,6 @@ void MCMC(double *params, double Tend, long N, double *AD, double *ED, double *S
     min[9] = 0.0;
     min[10] = -1.0;
 
-    
     for (i=0; i< NC; i++)
     {
         for (j=0; j< NP; j++) paramx[i][j] = params[j];
@@ -3301,7 +3412,6 @@ void MCMC(double *params, double Tend, long N, double *AD, double *ED, double *S
             for (j=0; j< NP; j++) history[i][k][j] = params[j];
         }
     }
-    
 
     
     FisherFast(ll, Tend, paramx[0], Fisher[0]);
@@ -3461,64 +3571,123 @@ void MCMC(double *params, double Tend, long N, double *AD, double *ED, double *S
             
         }
         
-
-        if(mc > 0 && mc%20 == 0)
-        {
-                q = who[0];
-                m1 = exp(paramx[q][0]);
-                m2 = exp(paramx[q][1]);
-                DL = exp(paramx[q][6]);
-                
-                fprintf(chain,"%d %.12e %.12e %.12e ", mc, logLx[q], m1, m2);
-                for(i = 2; i < NP; i++)
-                 {
-                    if(i == 6)
+            if(mc > 0 && mc%20 == 0)
+            {
+                for(k = 0; k < 4; k++)
+                {
+                    q = who[k];
+                    
+                    if(ll == 0)
+                    {
+                    m1 = paramx[q][0];
+                    m2 = paramx[q][1];
+                    }
+                    
+                    if(ll == 1)
+                    {
+                    m1 = exp(paramx[q][0]);
+                    m2 = exp(paramx[q][1]);
+                    }
+                    
+                    if(ll == 2)
+                    {
+                    Mc = exp(paramx[q][0]);
+                    Mtot = exp(paramx[q][1]);
+                    eta = pow((Mc/Mtot), (5.0/3.0));
+                     if(eta > 0.25)
                      {
-                     fprintf(chain, "%.12e ", DL);
+                        dm = 0.0;
                      }
                      else
                      {
-                      fprintf(chain, "%.15e ", paramx[q][i]);
+                        dm = sqrt(1.0-4.0*eta);
                      }
+                    m1 = Mtot*(1.0+dm)/2.0;
+                    m2 = Mtot*(1.0-dm)/2.0;
+                    }
+                    
+                
+                    DL = exp(paramx[q][6]);
+                    
+                    fprintf(chain,"%d %.12e %.12e %.12e ", mc+k, logLx[q], m1, m2);
+                    for(i = 2; i < NP; i++)
+                     {
+                        if(i == 6)
+                         {
+                         fprintf(chain, "%.12e ", DL);
+                         }
+                         else
+                         {
+                          fprintf(chain, "%.15e ", paramx[q][i]);
+                         }
+                     }
+                    fprintf(chain,"%d\n", q);
+                }
+                
+                
+                fprintf(swaps, "%d ", mc);
+                for(k = 0; k < NC-1; k++)
+                {
+                    fprintf(swaps, "%f ", (double)(sacc[k])/(double)(scount[k]));
+                }
+                fprintf(swaps, "\n");
+                
+                for(k = 0; k < NC; k++)
+                {
+                    fprintf(levels, "%.12e ", logLx[who[k]]);
+                }
+                fprintf(levels, "\n");
+                
+                
+            }
+            
+            if(mc%100 == 0)
+            {
+                
+
+                q = who[0];
+                
+                if(ll == 0)
+                {
+                m1 = paramx[q][0];
+                m2 = paramx[q][1];
+                }
+                
+                if(ll == 1)
+                {
+                m1 = exp(paramx[q][0]);
+                m2 = exp(paramx[q][1]);
+                }
+                
+                if(ll == 2)
+                {
+                Mc = exp(paramx[q][0]);
+                Mtot = exp(paramx[q][1]);
+                eta = pow((Mc/Mtot), (5.0/3.0));
+                 if(eta > 0.25)
+                 {
+                    dm = 0.0;
                  }
-                fprintf(chain,"%d\n", q);
-            
-            fprintf(swaps, "%d ", mc);
-            for(k = 0; k < NC-1; k++)
-            {
-                fprintf(swaps, "%f ", (double)(sacc[k])/(double)(scount[k]));
+                 else
+                 {
+                    dm = sqrt(1.0-4.0*eta);
+                 }
+                m1 = Mtot*(1.0+dm)/2.0;
+                m2 = Mtot*(1.0-dm)/2.0;
+                }
+                
+                
+                printf("%d %e %e %e %f %f %f %f\n", mc, logLx[q], m1, m2,
+                
+                       (double)(sacc[3])/(double)(scount[3]),
+                       (double)(av[0][q])/(double)(cv[0][q]),
+                       (double)(av[1][q])/(double)(cv[1][q]),
+                       (double)(av[2][q])/(double)(cv[2][q]));
             }
-            fprintf(swaps, "\n");
-            
-            for(k = 0; k < NC; k++)
-            {
-                fprintf(levels, "%.12e ", logLx[who[k]]);
-            }
-            fprintf(levels, "\n");
-            
+
             
         }
         
-        if(mc%100 == 0)
-        {
-            
-
-            q = who[0];
-            m1 = exp(paramx[q][0]);
-            m2 = exp(paramx[q][1]);
-            
-            
-            printf("%d %e %e %e %f %f %f %f\n", mc, logLx[q], m1, m2,
-            
-                   (double)(sacc[0])/(double)(scount[0]),
-                   (double)(av[0][q])/(double)(cv[0][q]),
-                   (double)(av[1][q])/(double)(cv[1][q]),
-                   (double)(av[2][q])/(double)(cv[2][q]));
-        }
-
-        
-    }
-    
     fclose(chain);
     fclose(levels);
     fclose(swaps);
@@ -3637,6 +3806,13 @@ void update(int k, int ll, double Tend, double *logLx, double *nhx, double **par
                 if(paramy[q][j] > max[j] || paramy[q][j] < min[j]) flag = 1;
             }
             
+           if(ll == 2 && flag == 0)
+           {
+               // eta cannot exceed 0.25
+               leta = (5.0/3.0)*(paramy[q][0]-paramy[q][1]);
+               if(leta > log(0.25)) flag = 1;
+           }
+            
             if(i==0 && flag ==0)
             {
                     int *pmap;
@@ -3645,8 +3821,10 @@ void update(int k, int ll, double Tend, double *logLx, double *nhx, double **par
                     double **Svec;
                     double *Sval;
                 
-                if(paramy[q][1] > paramy[q][0])  // catch if m2 > m1 and flip
-                {
+                if(ll == 0 || ll == 1)
+                 {
+                    if(paramy[q][1] > paramy[q][0])  // catch if m2 > m1 and flip
+                    {
                     lm1 = paramy[q][1];
                     chi1 = paramy[q][3];
                     lm2 = paramy[q][0];
@@ -3655,6 +3833,7 @@ void update(int k, int ll, double Tend, double *logLx, double *nhx, double **par
                     paramy[q][1] = lm2;
                     paramy[q][2] = chi1;
                     paramy[q][3] = chi2;
+                    }
                 }
                     
                     Svec = double_matrix(3,3);
@@ -4031,7 +4210,8 @@ void update(int k, int ll, double Tend, double *logLx, double *nhx, double **par
     // [0] ln Mass1  [1] ln Mass2  [2] Spin1 [3] Spin2 [4] phic [5] tc [6] ln distance
     // [7] EclipticCoLatitude, [8] EclipticLongitude  [9] polarization, [10] inclination
 
-    
+    if(ll == 0 || ll == 1)
+    {
     if(paramy[q][1] > paramy[q][0])  // catch if m2 > m1 and flip
     {
         lm1 = paramy[q][1];
@@ -4043,6 +4223,8 @@ void update(int k, int ll, double Tend, double *logLx, double *nhx, double **par
         paramy[q][2] = chi1;
         paramy[q][3] = chi2;
     }
+    }
+    
     
     
     cv[typ][k]++;
@@ -4067,13 +4249,40 @@ void update(int k, int ll, double Tend, double *logLx, double *nhx, double **par
         if(paramy[q][i] > max[i] || paramy[q][i] < min[i]) flag = 1;
     }
     
+    if(ll == 2 && flag == 0)
+    {
+     // eta cannot exceed 0.25
+     leta = (5.0/3.0)*(paramy[q][0]-paramy[q][1]);
+     if(leta > log(0.25)) flag = 1;
+    
+      // Jacobian that makes the prior flat in m1, m2.
+      if(flag == 0)
+      {
+        eta = exp(leta);
+        pMcMy = 2.0*paramy[q][1]+leta-0.5*log(1.0-4.0*eta);
+        
+        leta = (5.0/3.0)*(paramx[q][0]-paramx[q][1]);
+        eta = exp(leta);
+        pMcMx = 2.0*paramx[q][1]+leta-0.5*log(1.0-4.0*eta);
+      }
+        
+    }
+    
     if(flag == 0)
     {
-        
         // Jacobian that makes the prior flat in m1, m2.
         // Jacobian is m1*m2, but we combine the probablities as logs
+        if(ll == 0)
+        {
+        pMcMy = log(paramy[q][0]*paramy[q][1]);
+        pMcMx = log(paramx[q][0]*paramx[q][1]);
+        }
+
+        if(ll == 1)
+        {
         pMcMy = paramy[q][0]+paramy[q][1];
         pMcMx = paramx[q][0]+paramx[q][1];
+        }
         
         logLy = 0.0;
         nhy = 0.0;
@@ -4128,8 +4337,16 @@ void update(int k, int ll, double Tend, double *logLx, double *nhx, double **par
     //pDx = 3.0*paramx[q][6];   // uniform in volume prior
     //pDy = 3.0*paramy[q][6];   // uniform in volume prior
     
-    pDx = paramx[q][6];   // uniform in distance prior
-    pDy = paramy[q][6];   // uniform in distance prior
+        if(ll == 0)
+        {
+        pDx = log(paramx[q][6]);   // uniform in distance prior
+        pDy = log(paramy[q][6]);   // uniform in distance prior
+        }
+        else
+        {
+        pDx = paramx[q][6];   // uniform in distance prior
+        pDy = paramy[q][6];   // uniform in distance prior
+        }
     
     
     H = (logLy-logLx[q])/heat[k] + pMcMy + pDy - qy - pDx - pMcMx + qx;
@@ -4820,7 +5037,7 @@ void FisherFast(int ll, double Tend, double *params, double **Fisher)
     TF = (double*)malloc(sizeof(double)* (NFmax));
     
     // Note: This call sets the FF array, which then gets held and used even when the parameters change a little
-    SetUp(ll, params, NFmax, &NF, FF, TF, PF, AF);
+    SetUp(ll, Tend, params, NFmax, &NF, FF, TF, PF, AF);
     
     TFref = (double*)malloc(sizeof(double)* (NF));
     PFref = (double*)malloc(sizeof(double)* (NF));
@@ -5120,7 +5337,7 @@ void FisherSub(int ll, double Tend, int *pmap, double *params, double **Fisher)
     TF = (double*)malloc(sizeof(double)* (NFmax));
     
     // Note: This call sets the FF array, which then gets held and used even when the parameters change a little
-    SetUp(ll, params, NFmax, &NF, FF, TF, PF, AF);
+    SetUp(ll, Tend, params, NFmax, &NF, FF, TF, PF, AF);
     
     TFref = (double*)malloc(sizeof(double)* (NF));
     PFref = (double*)malloc(sizeof(double)* (NF));
@@ -5419,35 +5636,60 @@ void Intrinsic(int ll, double *params, int NF, double *FF, double *TF, double *P
     AmpPhaseFDWaveform *ap = NULL;
     RealVector *freq;
     
-    double m1, m2, chi1, chi2, Mtot, Mc, eta;
+    double m1, m2, chi1, chi2, Mtot, Mc;
     double m1_SI, m2_SI, distance, tc, phic;
+    double eta, dm;
     
     int i, ii, ret, flag;
     double fonfs, t, told, tx;
     
     double fRef_in=PDfref;
     
-    if(ll == 0)  // linear
+    if(ll == 0)  // linear in m1, m2
     {
     m1 = params[0];    // Mass1
     m2 = params[1];    // Mass2
     distance = params[6]*1.0e9*PC_SI; // distance
+    m1_SI = m1*MSUN_SI;
+    m2_SI = m2*MSUN_SI;
+    Mtot = (m1+m2)*TSUN;
+    eta = m1*m2/((m1+m2)*(m1+m2));
+    Mc = pow(m1*m2,3.0/5.0)/pow(m1+m2,1.0/5.0)*TSUN;
     }
-    else  // log
+    else if(ll == 1)  // log in m1, m2
     {
      m1 = exp(params[0]);    // Mass1
      m2 = exp(params[1]);    // Mass2
      distance = exp(params[6])*1.0e9*PC_SI; // distance
+     m1_SI = m1*MSUN_SI;
+     m2_SI = m2*MSUN_SI;
+     Mtot = (m1+m2)*TSUN;
+     eta = m1*m2/((m1+m2)*(m1+m2));
+     Mc = pow(m1*m2,3.0/5.0)/pow(m1+m2,1.0/5.0)*TSUN;
+    }
+    else // log in Mc, Mt
+    {
+    Mc = exp(params[0])*TSUN;
+    Mtot = exp(params[1])*TSUN;
+    distance = exp(params[6])*1.0e9*PC_SI; // distance
+    eta = pow((Mc/Mtot), (5.0/3.0));
+     if(eta > 0.25)
+     {
+        dm = 0.0;
+     }
+     else
+     {
+        dm = sqrt(1.0-4.0*eta);
+     }
+    m1 = Mtot*(1.0+dm)/2.0;
+    m2 = Mtot*(1.0-dm)/2.0;
+    m1_SI = m1*MSUN_SI/TSUN;
+    m2_SI = m2*MSUN_SI/TSUN;
     }
     
     chi1 = params[2];  // Spin1
     chi2 = params[3];  // Spin2
-    m1_SI =  m1*MSUN_SI;
-    m2_SI =  m2*MSUN_SI;
     tc = params[5];    // merger time
-    
-    Mtot = (m1+m2)*TSUN;
-    eta = m1*m2/((m1+m2)*(m1+m2));
     
     freq = CreateRealVector(NF);
     
@@ -5496,11 +5738,10 @@ void Intrinsic(int ll, double *params, int NF, double *FF, double *TF, double *P
     
 }
 
-
-void SetUp(int ll, double *params, int NFmax, int *NFS, double *FF, double *TF, double *PF, double *AF)
+void SetUp(int ll, double Tend, double *params, int NFmax, int *NFS, double *FF, double *TF, double *PF, double *AF)
 {
     double af, fr, df, DT, fac, deltaF, f, fmax, fmin, x;
-    double m1, m2, chi1, chi2, Mtot, Mc, eta;
+    double m1, m2, chi1, chi2, Mtot, Mc, eta, dm;
     double Amp, Phase, tf, fguess;
     double m1_SI, m2_SI, distance, tc, phic, told;
     int i, ii, NF;
@@ -5517,24 +5758,52 @@ void SetUp(int ll, double *params, int NFmax, int *NFS, double *FF, double *TF, 
     
     // NFmax is the size of the holder arrays. NFS is the actual size.
     
-    if(ll == 0)  // linear
+    if(ll == 0)  // linear in m1, m2
     {
-        m1 = params[0];    // Mass1
-        m2 = params[1];    // Mass2
-        distance = params[6]*1.0e9*PC_SI; // distance
+    m1 = params[0];    // Mass1
+    m2 = params[1];    // Mass2
+    distance = params[6]*1.0e9*PC_SI; // distance
+    Mtot = (m1+m2)*TSUN;
+    eta = m1*m2/((m1+m2)*(m1+m2));
+    Mc = pow(m1*m2,3.0/5.0)/pow(m1+m2,1.0/5.0)*TSUN;
     }
-    else  // log
+    else if(ll == 1)  // log in m1, m2
     {
-        m1 = exp(params[0]);    // Mass1
-        m2 = exp(params[1]);    // Mass2
-        distance = exp(params[6])*1.0e9*PC_SI; // distance
+     m1 = exp(params[0]);    // Mass1
+     m2 = exp(params[1]);    // Mass2
+     distance = exp(params[6])*1.0e9*PC_SI; // distance
+     Mtot = (m1+m2)*TSUN;
+     eta = m1*m2/((m1+m2)*(m1+m2));
+     Mc = pow(m1*m2,3.0/5.0)/pow(m1+m2,1.0/5.0)*TSUN;
     }
+    else // log in Mc, Mt
+    {
+    distance = exp(params[6])*1.0e9*PC_SI; // distance
+    Mc = exp(params[0])*TSUN;
+    Mtot = exp(params[1])*TSUN;
+    eta = pow((Mc/Mtot), (5.0/3.0));
+     if(eta > 0.25)
+     {
+        dm = 0.0;
+     }
+     else
+     {
+        dm = sqrt(1.0-4.0*eta);
+     }
+    m1 = Mtot*(1.0+dm)/2.0;
+    m2 = Mtot*(1.0-dm)/2.0;
+    }
+
     
     tc = params[5];    // merger time
     
-    Mc = pow(m1*m2,3.0/5.0)/pow(m1+m2,1.0/5.0)*TSUN;
+    StartStop(ll, params, Tend, 0.0, Tend, &fmin, &fmax, &fr);
     
-    StartStop(ll, params, Tobs, 0.0, Tobs, &fmin, &fmax, &fr);
+    // Because of the way the LDC phase is set at merger, we have to take the signal all the way out to
+    // the merger frequency even if the obsevation time doesn't get us to merger. The signal is still
+    // truncated by the window at Tend, so the SNRs etc will be correct
+    
+    fmax = 2.0*fr;
     
     //printf("%e %e %e\n", fmin, fmax, 1.0/Mtot);
     
@@ -5545,7 +5814,7 @@ void SetUp(int ll, double *params, int NFmax, int *NFS, double *FF, double *TF, 
     }
     
     dfmin = 1.0/Tobs;
-    dfmax = fr/100.0;
+    dfmax = fmax/100.0;
     DT = 3.0e5;
     
     fac = DT*pow(8.0*PI, 8.0/3.0)*3.0/40.0*pow(Mc,5.0/3.0);
@@ -5630,7 +5899,7 @@ void Hetrodyne(int ll, double Tend, double *params, long N, double *ATR, double 
     FF = (double*)malloc(sizeof(double)* (NFmax));
     TF = (double*)malloc(sizeof(double)* (NFmax));
     
-    SetUp(ll, params, NFmax, &NF, FF, TF, PF, AF);
+    SetUp(ll, Tend, params, NFmax, &NF, FF, TF, PF, AF);
     
     AAmp = (double*)malloc(sizeof(double)* (NF));
     EAmp = (double*)malloc(sizeof(double)* (NF));
@@ -5803,8 +6072,7 @@ void Extrinsic(double *params, double Tend, int NF, double *FF, double *TF, doub
     
     // Merger kdotx
     *kxm = (TF[NF-1]-xi[NF-1]);
-    
-    Tcut = Tend+t_rise/1.5;
+
 
     //out = fopen("map_fast.dat","w");
     for(n=0; n< NF; n++)
@@ -5814,11 +6082,11 @@ void Extrinsic(double *params, double Tend, int NF, double *FF, double *TF, doub
         f = FF[n];
         
         x = 1.0;
-        if(t > Tcut-t_rise && t < Tcut)
+        if(t > Tend-t_rise && t < Tend)
         {
-        x = 0.5*(1.0-cos(PI*(t-Tcut)/t_rise));
+        x = 0.5*(1.0-cos(PI*(t-Tend)/t_rise));
         }
-        if(t > Tcut) x = 0.0;
+        if(t > Tend) x = 0.0;
         
         kdotx = t-xi[n];
         
@@ -6550,9 +6818,7 @@ double det(double **A, int N)
     
 }
 
-
-
-void getfreq(double *fnew, double *tf, double *Amp, double *Phase, double t, double fguess, double phic, double fRef_in, double m1_SI, double m2_SI, double chi1, double chi2, double distance, double tc)
+void getfreq(double Tend, double *fnew, double *tf, double *Amp, double *Phase, double t, double fguess, double phic, double fRef_in, double m1_SI, double m2_SI, double chi1, double chi2, double distance, double tc)
 {
     AmpPhaseFDWaveform *ap = NULL;
     double ep, u, v, tnew, x;
@@ -6563,7 +6829,7 @@ void getfreq(double *fnew, double *tf, double *Amp, double *Phase, double t, dou
     
     M_sec = (m1_SI+m2_SI) * MTSUN_SI/MSUN_SI;
     
-    if(fguess < 1.0/Tobs) fguess = 1.0/Tobs;
+    if(fguess < 1.0/Tend) fguess = 1.0/Tend;
     
     ep = 1.0e-6/M_sec;
     v = (4.0*PI*ep);
@@ -6603,6 +6869,8 @@ void getfreq(double *fnew, double *tf, double *Amp, double *Phase, double t, dou
     DestroyRealVector(freq);
     
 }
+
+
 
 
 void timearray(double *params, RealVector *freq, long N, double *TF, AmpPhaseFDWaveform *ap)
