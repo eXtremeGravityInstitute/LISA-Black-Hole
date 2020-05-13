@@ -1249,6 +1249,7 @@ void PDwave(int ll, double *wavef, double *params, int N, double Tobs, double Tz
    
     
     DestroyAmpPhaseFDWaveform(ap);
+    DestroyRealVector(freq);
     
 }
 
@@ -2696,6 +2697,9 @@ void ResponseFreq(int ll, double *params, long N, double *AS, double *ES, double
     free(FcEI);
     free(FpEI);
     free(FF);
+    
+    DestroyAmpPhaseFDWaveform(ap);
+    DestroyRealVector(freq);
     
     return;
 }
