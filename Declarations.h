@@ -1,3 +1,4 @@
+void lisaskyloc(double t, double *params, double *thetaL, double *phiL);
 double SNRFast(double *params);
 void FisherPlot(int ll, double Tend, double *params);
 void pbt_shift(double *corr, double *corrf, double *data1, double *data2, double *Sn, int n);
@@ -33,9 +34,9 @@ void ResponseFreq(int ll, double Tend, double *params, long N, double *AS, doubl
 void ResponseFast(int ll, double Tend, double *params, long N, double *AS, double *ES);
 void timearray(double *params, RealVector *freq, long N, double *TF, AmpPhaseFDWaveform *ap);
 double fourier_nwip(double *a, double *b, double *Sn, int n);
-double FofT(int ll, double *params, double tref);
+double FofT(int ll, double Tend, double *params, double tref);
 void StartStop(int ll, double *params, double Tseg, double tstart, double tstop, double *fstart, double *fstop, double *frg);
-void getfreq(double *fnew, double *tf, double *Amp, double *Phase, double t, double fguess, double phic, double fRef_in, double m1_SI, double m2_SI, double chi1, double chi2, double distance, double tc);
+void getfreq(double Tend, double *fnew, double *tf, double *Amp, double *Phase, double t, double fguess, double phic, double fRef_in, double m1_SI, double m2_SI, double chi1, double chi2, double distance, double tc);
 void update(int k, int ll, double Tend, double *logLx, double *nhx, double **paramx, double **paramy, double *min, double *max, int *who, double *heat, double ***history, double *SN, double **ejump, double ***evec, double **ejumpI, double ***evecI, double **diag, double ***iChl, double tm, int NH, int NF, double *FF, double *AA, double *EA, double *AP, double *EP, int **cv, int **av, double *ATR, double *ATI, double *ETR, double *ETI, double *FN, double *ASD, gsl_rng *r);
 void MCMC(double *params, double Tend, long N, double *AD, double *ED, double *SN);
 double Likelihood(int ll, double Tend, double *params, long N, double *AD, double *ED, double *SN);
@@ -55,7 +56,7 @@ void FstatFull(int ll, double Tend, double *params, double *pnew, int N, double 
 void FisherSub(int ll, double Tend, int *pmap, double *params, double **Fisher);
 void FisherFast(int ll, double Tend, double *params, double **Fisher);
 void Intrinsic(int ll, double *params, int NF, double *FF, double *TF, double *PF, double *AF);
-void SetUp(int ll, double *params, int NFmax, int *NFS, double *FF, double *TF, double *PF, double *AF);
+void SetUp(int ll, double Tend, double *params, int NFmax, int *NFS, double *FF, double *TF, double *PF, double *AF);
 void Extrinsic(double *params, double Tend, int NF, double *FF, double *TF, double *PF, double *AF, double *AAmp, double *EAmp, double *APhase, double *EPhase, double *kxm);
 void de_jump(double *paramsx, double *paramsy, double **history, int m, int d, gsl_rng *r);
 double det(double **A, int N);
